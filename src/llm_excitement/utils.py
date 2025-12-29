@@ -3,10 +3,20 @@ Utility functions for the LLM Excitement project
 """
 
 import json
-import torch
-import numpy as np
 from pathlib import Path
 from typing import Dict, Any, List
+
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
 
 
 def set_seed(seed: int):
@@ -16,8 +26,12 @@ def set_seed(seed: int):
     Args:
         seed: Random seed
     """
+    if not TORCH_AVAILABLE:
+        raise ImportError("torch is required for set_seed. Install with: pip install torch")
+    
     torch.manual_seed(seed)
-    np.random.seed(seed)
+    if NUMPY_AVAILABLE:
+        np.random.seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
@@ -32,13 +46,14 @@ def save_results(results: Dict[str, Any], output_path: str):
     """
     # Convert numpy arrays to lists for JSON serialization
     def convert_numpy(obj):
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        elif isinstance(obj, np.floating):
-            return float(obj)
-        elif isinstance(obj, np.integer):
-            return int(obj)
-        elif isinstance(obj, dict):
+        if NUMPY_AVAILABLE:
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.integer):
+                return int(obj)
+        if isinstance(obj, dict):
             return {k: convert_numpy(v) for k, v in obj.items()}
         elif isinstance(obj, list):
             return [convert_numpy(item) for item in obj]
