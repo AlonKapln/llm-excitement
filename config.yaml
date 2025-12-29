@@ -1,0 +1,26 @@
+# Configuration for reward signal detection experiment
+
+# Model configuration
+model:
+  model_name: "google/gemma-2-2b"
+  layer: 12
+  device: "cuda"  # or "cpu"
+  dtype: "float32"
+
+# SAE configuration
+sae:
+  sae_variant: "layer_12/width_16k/average_l0_71"
+  sae_width: 16384
+  top_k_features: 50
+
+# Detector configuration
+detector:
+  activation_threshold: 0.5
+  correlation_threshold: 0.6
+  min_samples: 5
+
+# Data and output
+data_path: null  # Path to your feedback data JSON
+output_dir: "./results"
+batch_size: 32
+seed: 42
