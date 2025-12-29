@@ -1,0 +1,62 @@
+[
+  {
+    "text": "Excellent response! This is exactly what I was looking for.",
+    "feedback": "positive",
+    "score": 1.0
+  },
+  {
+    "text": "Great job, very helpful and clear.",
+    "feedback": "positive",
+    "score": 0.95
+  },
+  {
+    "text": "Perfect! Thank you so much.",
+    "feedback": "positive",
+    "score": 1.0
+  },
+  {
+    "text": "This is really helpful, thanks!",
+    "feedback": "positive",
+    "score": 0.85
+  },
+  {
+    "text": "Wonderful explanation, very clear.",
+    "feedback": "positive",
+    "score": 0.9
+  },
+  {
+    "text": "This is not what I asked for at all.",
+    "feedback": "negative",
+    "score": 0.8
+  },
+  {
+    "text": "Incorrect information, please fix.",
+    "feedback": "negative",
+    "score": 0.9
+  },
+  {
+    "text": "This answer is unhelpful and confusing.",
+    "feedback": "negative",
+    "score": 0.75
+  },
+  {
+    "text": "Not quite right, missing key details.",
+    "feedback": "negative",
+    "score": 0.7
+  },
+  {
+    "text": "This is unclear and doesn't answer my question.",
+    "feedback": "negative",
+    "score": 0.8
+  },
+  {
+    "text": "Okay, I understand.",
+    "feedback": "neutral",
+    "score": 0.5
+  },
+  {
+    "text": "Noted, thank you.",
+    "feedback": "neutral",
+    "score": 0.5
+  }
+]

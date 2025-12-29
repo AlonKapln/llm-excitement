@@ -41,7 +41,8 @@ venv.bak/
 .ipynb_checkpoints
 
 # Data and model files
-data/
+data/*
+!data/example_feedback.json
 models/
 *.pt
 *.pth
