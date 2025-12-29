@@ -6,6 +6,8 @@ Identifying interpretable features in Large Language Models (LLMs) using Sparse 
 
 This project aims to identify specific interpretable features in LLMs that function as internal reward signals, activated specifically by positive human feedback. We use **Gemma Scope 2** for finding these features through Sparse Autoencoder (SAE) analysis.
 
+**Note**: The current implementation uses a placeholder SAE structure for demonstration purposes. For production use with actual Gemma Scope 2 SAE weights, see the integration notes in the code and the [Gemma Scope 2 release](https://huggingface.co/google/gemma-scope-2b-pt-res).
+
 ## Features
 
 - **SAE Feature Extraction**: Extract interpretable features from Gemma 2 models using Sparse Autoencoders
@@ -208,8 +210,34 @@ Rank 1:
 
 This project is designed to work with [Gemma Scope 2](https://huggingface.co/google/gemma-scope-2b-pt-res), which provides pre-trained SAEs for Gemma 2 models. The SAEs help identify interpretable features in the model's internal representations.
 
+### Integrating Actual Gemma Scope 2 SAE Weights
+
+The current implementation uses a placeholder SAE for demonstration. To use actual Gemma Scope 2 weights:
+
+1. Download SAE weights from the [Gemma Scope 2 release](https://huggingface.co/google/gemma-scope-2b-pt-res)
+2. Modify the `_load_sae()` method in `src/llm_excitement/sae_extractor.py` to load the weights:
+
+```python
+from safetensors.torch import load_file
+
+def _load_sae(self):
+    # Load actual Gemma Scope 2 SAE weights
+    sae_path = "path/to/gemma-scope-2b-pt-res"
+    weights = load_file(f"{sae_path}/{self.sae_variant}/params.safetensors")
+    
+    # Initialize SAE with proper architecture
+    self.sae = nn.ModuleDict({
+        'encoder': nn.Linear(hidden_size, sae_width, bias=True),
+        'decoder': nn.Linear(sae_width, hidden_size, bias=True),
+    })
+    
+    # Load weights
+    self.sae.load_state_dict(weights)
+```
+
 ## Notes
 
+- **Current Implementation**: Uses a demo SAE structure for illustration
 - The first run will download the Gemma 2 model (~5GB), which may take some time
 - GPU is recommended for faster processing (use `--device cuda`)
 - Adjust `activation_threshold` and `correlation_threshold` based on your needs

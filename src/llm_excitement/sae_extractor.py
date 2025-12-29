@@ -65,11 +65,19 @@ class SAEFeatureExtractor:
         """
         Load the Sparse Autoencoder from Gemma Scope 2.
         
-        Note: This is a simplified implementation. In practice, you would load
-        the actual SAE weights from the Gemma Scope 2 release on HuggingFace.
+        IMPORTANT: This is a DEMO implementation with a placeholder SAE structure.
+        
+        For production use, you should:
+        1. Download actual Gemma Scope 2 SAE weights from HuggingFace:
+           https://huggingface.co/google/gemma-scope-2b-pt-res
+        2. Load the weights using safetensors or torch.load()
+        3. Use the official SAE architecture from the Gemma Scope 2 release
+        
+        The current implementation creates a simple encoder-decoder structure
+        for demonstration purposes only.
         """
         # Gemma Scope 2 SAEs are available at: google/gemma-scope-2b-pt-res
-        # For this implementation, we create a placeholder SAE structure
+        # TODO: Integrate actual Gemma Scope 2 SAE weights
         
         # Get hidden size from model config
         hidden_size = self.model.config.hidden_size
