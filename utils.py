@@ -30,10 +30,9 @@ class MODEL_SIZE(Enum):
 torch.set_grad_enabled(False)  # avoid blowing up mem
 if torch.backends.mps.is_available():
     device = "mps"
-else:
-    device = "cuda" if torch.cuda.is_available() else "cpu"
 
-def get_test_components(model_size: MODEL_SIZE, instructions_tuned: bool = False, device: str = "cuda"):
+
+def get_test_components(model_size: MODEL_SIZE, instructions_tuned: bool = False):
     model_name = f"google/gemma-{model_size.value}-{'it' if instructions_tuned else 'pt'}"
     sae_name = f"gemma-scope-2-{model_size.value}-{'it' if instructions_tuned else 'pt'}-transcoders-all"
 
