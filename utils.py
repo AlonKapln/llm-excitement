@@ -33,30 +33,22 @@ if torch.backends.mps.is_available():
 
 
 def get_test_components(model_size: MODEL_SIZE, instructions_tuned: bool = False):
-    model_name = f"google/gemma-{model_size.value}-{'it' if instructions_tuned else 'pt'}"
-    sae_name = f"gemma-scope-2-{model_size.value}-{'it' if instructions_tuned else 'pt'}-transcoders-all"
+    model_name = f"google/gemma-3-{model_size.value}-{'it' if instructions_tuned else 'pt'}"
+    sae_name = f"google/gemma-scope-2-{model_size.value}-{'it' if instructions_tuned else 'pt'}"
 
+    from sae_lens import SAE
 
+    release = "gemma-scope-2-270m-it-res"
+    sae_id = "layer_12_width_262k_l0_medium_seed_1"
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         device_map='auto',
     )
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-    sae = SAE.from_pretrained(
-        release=sae_name,  # see other options in sae_lens/pretrained_saes.yaml
-        sae_id="blocks.8.hook_resid_pre",  # won't always be a hook point
-        device=device,
-    )
-
+    sae = SAE.from_pretrained(release, sae_id)
     return model, tokenizer, sae
 
-def process_data(model, tokenizer, sae, prompts, device: str = "cuda"):
-    inputs = tokenizer(prompts, return_tensors="pt", padding=True).to(device)
-    with torch.no_grad():
-        outputs = model(**inputs, output_hidden_states=True)
-    hidden_states = outputs.hidden_states[8]  # get hidden states at layer 8
-    transcodes = sae.encode(hidden_states)
-    return inputs
 
+if __name__ == "__main__":
 
+    get_test_components(MODEL_SIZE.M270, instructions_tuned=True)

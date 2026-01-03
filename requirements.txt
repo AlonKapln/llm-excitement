@@ -1,0 +1,13 @@
+sae-lens
+torch
+safetensors
+pandas
+ipython
+plotly
+einops
+numpy
+huggingface-hub
+transformers>=4.51.3
+datasets
+tqdm
+ipywidgets
