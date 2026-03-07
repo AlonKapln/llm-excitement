@@ -23,11 +23,58 @@ import numpy as np
 # ──────────────────────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RESULTS_DIR = os.path.join(BASE_DIR, "steering results")
-LABELS_FILE = os.path.join(BASE_DIR, "labels.json")
 FIGURES_DIR = os.path.join(BASE_DIR, "figures")
-CSV_OUTPUT = os.path.join(BASE_DIR, "final_analysis.csv")
 
 CATEGORIES = ["positive", "negative", "jailbreak", "positive_jailbreak", "negative_jailbreak"]
+
+# The default model is "12b" (root-level category dirs).
+# Additional models live in subdirs like "steering results/4b/".
+DEFAULT_MODEL = "12b"
+
+
+def _discover_models():
+    """Return a list of available model names by scanning RESULTS_DIR.
+
+    The root-level category dirs are treated as the default model ('12b').
+    Any other subdirectory that itself contains category subdirs is a separate model.
+    """
+    models = []
+    if not os.path.isdir(RESULTS_DIR):
+        return models
+    # Check if root has any category dirs → default model
+    if any(os.path.isdir(os.path.join(RESULTS_DIR, c)) and c not in (".",)
+           for c in os.listdir(RESULTS_DIR)
+           if c in CATEGORIES):
+        models.append(DEFAULT_MODEL)
+    # Check for model subdirs (e.g. "4b") that contain category subdirs
+    for name in sorted(os.listdir(RESULTS_DIR)):
+        subdir = os.path.join(RESULTS_DIR, name)
+        if not os.path.isdir(subdir) or name in CATEGORIES:
+            continue
+        if any(os.path.isdir(os.path.join(subdir, c)) for c in CATEGORIES):
+            models.append(name)
+    return models
+
+
+def _model_results_dir(model):
+    """Return the results directory for a given model."""
+    if model == DEFAULT_MODEL:
+        return RESULTS_DIR
+    return os.path.join(RESULTS_DIR, model)
+
+
+def _labels_file(model):
+    """Return the labels JSON path for a given model."""
+    if model == DEFAULT_MODEL:
+        return os.path.join(BASE_DIR, "labels.json")
+    return os.path.join(BASE_DIR, f"labels_{model}.json")
+
+
+def _csv_output(model):
+    """Return the CSV output path for a given model."""
+    if model == DEFAULT_MODEL:
+        return os.path.join(BASE_DIR, "final_analysis.csv")
+    return os.path.join(BASE_DIR, f"final_analysis_{model}.csv")
 
 
 # ──────────────────────────────────────────────────────────────
@@ -49,16 +96,17 @@ def parse_coefficients(filename):
     return coeffs
 
 
-def parse_all_results():
-    """Load every JSON file across all 5 subdirectories.
+def parse_all_results(model=DEFAULT_MODEL):
+    """Load every JSON file across all category subdirectories for a model.
 
     Returns a list of dicts, one per (file, entry_index) pair:
         {category, filename, entry_idx, original_prompt, steered_response,
          config, coefficients, avg_metrics}
     """
+    results_dir = _model_results_dir(model)
     entries = []
     for category in CATEGORIES:
-        cat_dir = os.path.join(RESULTS_DIR, category)
+        cat_dir = os.path.join(results_dir, category)
         if not os.path.isdir(cat_dir):
             continue
         for fname in sorted(os.listdir(cat_dir)):
@@ -111,14 +159,17 @@ class LabelerApp(tk.Tk):
     DEFAULT_FONT_SIZE = 13
     FONT_FAMILY = "SF Pro"   # macOS; _resolve_font picks fallback
 
-    def __init__(self, entries):
+    def __init__(self, entries, model=DEFAULT_MODEL, available_models=None):
         super().__init__()
-        self.title("Steering Response Labeler")
+        self.model = model
+        self.available_models = available_models or [model]
+        self.title(f"Steering Response Labeler — {model}")
         self.geometry("1060x820")
         self.minsize(800, 650)
         self.configure(bg=self.BG)
 
         self.entries = entries
+        self.labels_file = _labels_file(model)
         self.labels = self._load_labels()
         self.font_size = self.DEFAULT_FONT_SIZE
         self.font_family = self._resolve_font()
@@ -166,15 +217,14 @@ class LabelerApp(tk.Tk):
     def _label_key(entry):
         return f"{entry['category']}/{entry['filename']}/{entry['entry_idx']}"
 
-    @staticmethod
-    def _load_labels():
-        if os.path.exists(LABELS_FILE):
-            with open(LABELS_FILE, "r") as f:
+    def _load_labels(self):
+        if os.path.exists(self.labels_file):
+            with open(self.labels_file, "r") as f:
                 return json.load(f)
         return {}
 
     def _save_labels(self):
-        with open(LABELS_FILE, "w") as f:
+        with open(self.labels_file, "w") as f:
             json.dump(self.labels, f, indent=2)
 
     # ── navigation helpers ───────────────────────────────────
@@ -366,9 +416,27 @@ class LabelerApp(tk.Tk):
     def _build_ui(self):
         PAD = 18
 
-        # ── Top bar: progress label + font size controls ─────
+        # ── Top bar: model selector + progress label + font size controls ─
         top = tk.Frame(self, bg=self.BG)
         top.pack(fill="x", padx=PAD, pady=(12, 0))
+
+        # Model selector
+        if len(self.available_models) > 1:
+            model_frame = tk.Frame(top, bg=self.BG)
+            model_frame.pack(side="left", padx=(0, 16))
+            self._track(
+                tk.Label(model_frame, text="Model:", font=self._font(self.font_size - 2, bold=True),
+                         bg=self.BG, fg=self.FG), size_offset=-2, bold=True
+            ).pack(side="left", padx=(0, 6))
+            for m in self.available_models:
+                is_current = (m == self.model)
+                bg = self.ACCENT if is_current else self.BTN_BG
+                fg = "#ffffff" if is_current else self.BTN_FG
+                b = self._btn(model_frame, f" {m} ",
+                              lambda model=m: self._switch_model(model),
+                              bg=bg, fg=fg, bold=is_current,
+                              size_offset=-2, padx=10, pady=4)
+                b.pack(side="left", padx=2)
 
         self.progress_label = self._track(
             tk.Label(top, text="", font=self._font(self.font_size - 2),
@@ -621,16 +689,27 @@ class LabelerApp(tk.Tk):
                 return
         self.destroy()
 
+    def _switch_model(self, model):
+        """Switch to a different model's results. Saves current labels first."""
+        if model == self.model:
+            return
+        # Save current work
+        self._save_labels()
+        # Store new model and relaunch — we set an attribute the main loop checks
+        self._next_model = model
+        self.destroy()
+
 
 # ──────────────────────────────────────────────────────────────
 # 3. Aggregate results
 # ──────────────────────────────────────────────────────────────
 
-def aggregate_results(entries):
+def aggregate_results(entries, model=DEFAULT_MODEL):
     """Combine labels + metrics into a per-file DataFrame."""
+    lf = _labels_file(model)
     labels = {}
-    if os.path.exists(LABELS_FILE):
-        with open(LABELS_FILE, "r") as f:
+    if os.path.exists(lf):
+        with open(lf, "r") as f:
             labels = json.load(f)
 
     # Group entries by (category, filename)
@@ -704,21 +783,24 @@ def _setup_style():
     })
 
 
-def _save_fig(fig, name):
-    os.makedirs(FIGURES_DIR, exist_ok=True)
+def _save_fig(fig, name, fig_dir=None):
+    d = fig_dir or FIGURES_DIR
+    os.makedirs(d, exist_ok=True)
     for ext in ("pdf", "png"):
-        fig.savefig(os.path.join(FIGURES_DIR, f"{name}.{ext}"), dpi=300)
+        fig.savefig(os.path.join(d, f"{name}.{ext}"), dpi=300, bbox_inches="tight")
     plt.close(fig)
-    print(f"  Saved figures/{name}.pdf and .png")
+    rel = os.path.relpath(d, BASE_DIR)
+    print(f"  Saved {rel}/{name}.pdf and .png")
 
 
-def generate_graphs(df):
+def generate_graphs(df, model=DEFAULT_MODEL):
     """Generate all publication-quality figures."""
     _setup_style()
-    os.makedirs(FIGURES_DIR, exist_ok=True)
+    fig_dir = os.path.join(FIGURES_DIR, model) if model != DEFAULT_MODEL else FIGURES_DIR
+    os.makedirs(fig_dir, exist_ok=True)
 
     # ── 1. Bar chart: refusal rate per config, grouped by category ──
-    fig, ax = plt.subplots(figsize=(7, 4))
+    fig, ax = plt.subplots(figsize=(10, 5))
     x_labels = []
     refusal_values = []
     colors_list = []
@@ -740,9 +822,9 @@ def generate_graphs(df):
     ax.yaxis.set_major_formatter(mticker.PercentFormatter(100))
     # Legend
     handles = [Patch(color=palette[c], label=c.replace("_", " ").title()) for c in CATEGORIES if c in set(df["category"])]
-    ax.legend(handles=handles, loc="upper right", frameon=True, fontsize=7)
+    ax.legend(handles=handles, loc="upper left", bbox_to_anchor=(1.0, 1.0), frameon=True, fontsize=7)
     fig.tight_layout()
-    _save_fig(fig, "refusal_rate_bar")
+    _save_fig(fig, "refusal_rate_bar", fig_dir)
 
     # ── 2. Heatmaps for two-coefficient combos ──
     for cat, coeff_x, coeff_y, xlabel, ylabel in [
@@ -774,12 +856,12 @@ def generate_graphs(df):
         cbar = fig.colorbar(im, ax=ax, shrink=0.8)
         cbar.set_label("Refusal Rate (%)")
         fig.tight_layout()
-        _save_fig(fig, f"heatmap_{cat}")
+        _save_fig(fig, f"heatmap_{cat}", fig_dir)
 
     # ── 3. Bar chart: average quality rating per config ──
     df_q = df.dropna(subset=["avg_quality"])
     if not df_q.empty:
-        fig, ax = plt.subplots(figsize=(7, 4))
+        fig, ax = plt.subplots(figsize=(10, 5))
         df_q_sorted = df_q.sort_values(["category", "config"])
         x_labels_q = df_q_sorted["config"].tolist()
         quality_vals = df_q_sorted["avg_quality"].tolist()
@@ -792,14 +874,14 @@ def generate_graphs(df):
         ax.set_title("Response Quality by Steering Configuration")
         ax.set_ylim(0, 10.5)
         handles = [Patch(color=palette[c], label=c.replace("_", " ").title()) for c in CATEGORIES if c in set(df_q["category"])]
-        ax.legend(handles=handles, loc="upper right", frameon=True, fontsize=7)
+        ax.legend(handles=handles, loc="upper left", bbox_to_anchor=(1.0, 1.0), frameon=True, fontsize=7)
         fig.tight_layout()
-        _save_fig(fig, "quality_bar")
+        _save_fig(fig, "quality_bar", fig_dir)
 
     # ── 4. Scatter: quality vs refusal rate ──
     df_scatter = df.dropna(subset=["avg_quality"])
     if not df_scatter.empty:
-        fig, ax = plt.subplots(figsize=(5, 4))
+        fig, ax = plt.subplots(figsize=(7, 5))
         for cat in CATEGORIES:
             sub = df_scatter[df_scatter["category"] == cat]
             if sub.empty:
@@ -812,11 +894,55 @@ def generate_graphs(df):
         ax.set_title("Quality vs. Refusal Rate")
         ax.set_xlim(-5, 105)
         ax.set_ylim(0, 10.5)
-        ax.legend(frameon=True, fontsize=7)
+        ax.legend(loc="upper left", bbox_to_anchor=(1.0, 1.0), frameon=True, fontsize=7)
         fig.tight_layout()
-        _save_fig(fig, "quality_vs_refusal_scatter")
+        _save_fig(fig, "quality_vs_refusal_scatter", fig_dir)
 
-    print(f"\nAll figures saved to {FIGURES_DIR}/")
+    # ── 5. Bar chart: steering delta / original ratio per config ──
+    if "delta_to_original_ratio" in df.columns:
+        df_d = df.dropna(subset=["delta_to_original_ratio"]).sort_values(["category", "config"])
+        if not df_d.empty:
+            fig, ax = plt.subplots(figsize=(10, 5))
+            x_labels_d = df_d["config"].tolist()
+            delta_vals = df_d["delta_to_original_ratio"].tolist()
+            colors_d = [palette.get(row["category"], "#999999") for _, row in df_d.iterrows()]
+            ax.bar(range(len(x_labels_d)), delta_vals, color=colors_d, edgecolor="white", linewidth=0.5)
+            ax.set_xticks(range(len(x_labels_d)))
+            ax.set_xticklabels(x_labels_d, rotation=45, ha="right", fontsize=7)
+            ax.set_ylabel(r"$\|\Delta\| \,/\, \|\mathbf{h}\|$")
+            ax.set_title("Steering Magnitude (Delta / Original Norm)")
+            handles_d = [Patch(color=palette[c], label=c.replace("_", " ").title())
+                         for c in CATEGORIES if c in set(df_d["category"])]
+            ax.legend(handles=handles_d, loc="upper left", bbox_to_anchor=(1.0, 1.0), frameon=True, fontsize=7)
+            fig.tight_layout()
+            _save_fig(fig, "delta_ratio_bar", fig_dir)
+
+    # ── 6. Quality distribution for non-refusal responses only ──
+    lf = _labels_file(model)
+    if os.path.exists(lf):
+        with open(lf, "r") as f:
+            all_labels = json.load(f)
+        non_refusal_q = [v["quality"] for v in all_labels.values()
+                         if v.get("refusal") == "no" and "quality" in v]
+        refusal_q = [v["quality"] for v in all_labels.values()
+                     if v.get("refusal") == "yes" and "quality" in v]
+        if non_refusal_q:
+            fig, ax = plt.subplots(figsize=(8, 5))
+            bins = np.arange(0.5, 11.5, 1)
+            if refusal_q:
+                ax.hist(refusal_q, bins=bins, alpha=0.5, label="Refusal responses",
+                        color="#4c72b0", edgecolor="white")
+            ax.hist(non_refusal_q, bins=bins, alpha=0.7, label="Non-refusal (jailbroken)",
+                    color="#c44e52", edgecolor="white")
+            ax.set_xlabel("Quality Rating")
+            ax.set_ylabel("Count")
+            ax.set_title("Quality Distribution: Refusal vs. Jailbroken Responses")
+            ax.set_xticks(range(1, 11))
+            ax.legend(loc="upper left", bbox_to_anchor=(1.0, 1.0), frameon=True, fontsize=8)
+            fig.tight_layout()
+            _save_fig(fig, "quality_distribution_histogram", fig_dir)
+
+    print(f"\nAll figures saved to {fig_dir}/")
 
 
 # ──────────────────────────────────────────────────────────────
@@ -824,29 +950,47 @@ def generate_graphs(df):
 # ──────────────────────────────────────────────────────────────
 
 def main():
-    print("Parsing all steering result files …")
-    entries = parse_all_results()
-    print(f"Found {len(entries)} total entries across {len(CATEGORIES)} categories.\n")
-
-    if not entries:
-        print("No result files found. Exiting.")
+    available_models = _discover_models()
+    if not available_models:
+        print("No steering result directories found. Exiting.")
         return
+    print(f"Discovered models: {', '.join(available_models)}")
 
-    # Launch labeler
-    print("Opening labeling UI …")
-    app = LabelerApp(entries)
-    app.mainloop()
+    current_model = available_models[0]
 
-    # Aggregate
-    print("\nAggregating results …")
-    df = aggregate_results(entries)
-    df.to_csv(CSV_OUTPUT, index=False)
-    print(f"Saved {CSV_OUTPUT}")
-    print(df.to_string(index=False))
+    while True:
+        print(f"\nParsing results for model '{current_model}' …")
+        entries = parse_all_results(current_model)
+        print(f"Found {len(entries)} entries.\n")
 
-    # Graphs
-    print("\nGenerating graphs …")
-    generate_graphs(df)
+        if not entries:
+            print(f"No result files found for '{current_model}'. Skipping.")
+            break
+
+        # Launch labeler
+        print("Opening labeling UI …")
+        app = LabelerApp(entries, model=current_model, available_models=available_models)
+        app.mainloop()
+
+        # Check if user switched to another model
+        next_model = getattr(app, "_next_model", None)
+
+        # Aggregate current model
+        print(f"\nAggregating results for '{current_model}' …")
+        df = aggregate_results(entries, current_model)
+        csv_out = _csv_output(current_model)
+        df.to_csv(csv_out, index=False)
+        print(f"Saved {csv_out}")
+        print(df.to_string(index=False))
+
+        # Graphs
+        print(f"\nGenerating graphs for '{current_model}' …")
+        generate_graphs(df, current_model)
+
+        if next_model:
+            current_model = next_model
+            continue
+        break
 
     print("\nDone!")
 
