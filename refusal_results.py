@@ -26,9 +26,6 @@ RESULTS_DIR = os.path.join(BASE_DIR, "steering results")
 FIGURES_DIR = os.path.join(BASE_DIR, "figures")
 
 CATEGORIES = ["positive", "negative", "jailbreak", "positive_jailbreak", "negative_jailbreak"]
-
-# The default model is "12b" (root-level category dirs).
-# Additional models live in subdirs like "steering results/4b/".
 DEFAULT_MODEL = "12b"
 
 
@@ -799,104 +796,42 @@ def generate_graphs(df, model=DEFAULT_MODEL):
     fig_dir = os.path.join(FIGURES_DIR, model) if model != DEFAULT_MODEL else FIGURES_DIR
     os.makedirs(fig_dir, exist_ok=True)
 
-    # ── 1. Bar chart: refusal rate per config, grouped by category ──
-    fig, ax = plt.subplots(figsize=(10, 5))
-    x_labels = []
-    refusal_values = []
-    colors_list = []
+    # ── Style helper ──
+    def _style_ax(a):
+        a.set_facecolor("#fafafa")
+        a.grid(True, axis="y", alpha=0.3, linestyle="--", linewidth=0.5)
+        a.spines["top"].set_visible(False)
+        a.spines["right"].set_visible(False)
+
     palette = {
         "positive": "#4c72b0", "negative": "#dd8452", "jailbreak": "#55a868",
         "positive_jailbreak": "#c44e52", "negative_jailbreak": "#8172b3",
     }
-    for _, row in df.sort_values(["category", "config"]).iterrows():
-        label = row["config"]
-        x_labels.append(label)
-        refusal_values.append(row["refusal_rate_pct"])
-        colors_list.append(palette.get(row["category"], "#999999"))
 
-    ax.bar(range(len(x_labels)), refusal_values, color=colors_list, edgecolor="white", linewidth=0.5)
-    ax.set_xticks(range(len(x_labels)))
-    ax.set_xticklabels(x_labels, rotation=45, ha="right", fontsize=7)
-    ax.set_ylabel("Refusal Rate (%)")
-    ax.set_title("Refusal Rate by Steering Configuration")
-    ax.yaxis.set_major_formatter(mticker.PercentFormatter(100))
-    # Legend
-    handles = [Patch(color=palette[c], label=c.replace("_", " ").title()) for c in CATEGORIES if c in set(df["category"])]
-    ax.legend(handles=handles, loc="upper left", bbox_to_anchor=(1.0, 1.0), frameon=True, fontsize=7)
-    fig.tight_layout()
-    _save_fig(fig, "refusal_rate_bar", fig_dir)
-
-    # ── 2. Heatmaps for two-coefficient combos ──
-    for cat, coeff_x, coeff_y, xlabel, ylabel in [
-        ("positive_jailbreak", "coeff_pos", "coeff_jb", "Positive Coeff", "Jailbreak Coeff"),
-        ("negative_jailbreak", "coeff_neg", "coeff_jb", "Negative Coeff", "Jailbreak Coeff"),
-    ]:
-        sub = df[df["category"] == cat].copy()
-        if sub.empty or coeff_x not in sub.columns or coeff_y not in sub.columns:
-            continue
-        pivot = sub.pivot_table(index=coeff_y, columns=coeff_x, values="refusal_rate_pct")
-        pivot = pivot.sort_index(ascending=False)
-
-        fig, ax = plt.subplots(figsize=(5, 3.5))
-        im = ax.imshow(pivot.values, cmap="RdYlGn_r", aspect="auto", vmin=0, vmax=100)
-        ax.set_xticks(range(len(pivot.columns)))
-        ax.set_xticklabels([f"{v:.1f}" for v in pivot.columns])
-        ax.set_yticks(range(len(pivot.index)))
-        ax.set_yticklabels([f"{v:.2f}" for v in pivot.index])
-        ax.set_xlabel(xlabel)
-        ax.set_ylabel(ylabel)
-        ax.set_title(f"Refusal Rate (%) — {cat.replace('_', ' ').title()}")
-        # Annotate cells
-        for i in range(len(pivot.index)):
-            for j in range(len(pivot.columns)):
-                val = pivot.values[i, j]
-                if not np.isnan(val):
-                    ax.text(j, i, f"{val:.0f}%", ha="center", va="center", fontsize=8,
-                            color="white" if val > 50 else "black")
-        cbar = fig.colorbar(im, ax=ax, shrink=0.8)
-        cbar.set_label("Refusal Rate (%)")
-        fig.tight_layout()
-        _save_fig(fig, f"heatmap_{cat}", fig_dir)
-
-    # ── 3. Bar chart: average quality rating per config ──
-    df_q = df.dropna(subset=["avg_quality"])
-    if not df_q.empty:
-        fig, ax = plt.subplots(figsize=(10, 5))
-        df_q_sorted = df_q.sort_values(["category", "config"])
-        x_labels_q = df_q_sorted["config"].tolist()
-        quality_vals = df_q_sorted["avg_quality"].tolist()
-        colors_q = [palette.get(row["category"], "#999999") for _, row in df_q_sorted.iterrows()]
-
-        ax.bar(range(len(x_labels_q)), quality_vals, color=colors_q, edgecolor="white", linewidth=0.5)
-        ax.set_xticks(range(len(x_labels_q)))
-        ax.set_xticklabels(x_labels_q, rotation=45, ha="right", fontsize=7)
-        ax.set_ylabel("Average Quality Rating (1–10)")
-        ax.set_title("Response Quality by Steering Configuration")
-        ax.set_ylim(0, 10.5)
-        handles = [Patch(color=palette[c], label=c.replace("_", " ").title()) for c in CATEGORIES if c in set(df_q["category"])]
-        ax.legend(handles=handles, loc="upper left", bbox_to_anchor=(1.0, 1.0), frameon=True, fontsize=7)
-        fig.tight_layout()
-        _save_fig(fig, "quality_bar", fig_dir)
-
-    # ── 4. Scatter: quality vs refusal rate ──
-    df_scatter = df.dropna(subset=["avg_quality"])
-    if not df_scatter.empty:
-        fig, ax = plt.subplots(figsize=(7, 5))
-        for cat in CATEGORIES:
-            sub = df_scatter[df_scatter["category"] == cat]
-            if sub.empty:
-                continue
-            ax.scatter(sub["refusal_rate_pct"], sub["avg_quality"],
-                       label=cat.replace("_", " ").title(),
-                       color=palette.get(cat, "#999999"), s=50, edgecolors="white", linewidth=0.5)
-        ax.set_xlabel("Refusal Rate (%)")
-        ax.set_ylabel("Average Quality Rating (1–10)")
-        ax.set_title("Quality vs. Refusal Rate")
-        ax.set_xlim(-5, 105)
-        ax.set_ylim(0, 10.5)
-        ax.legend(loc="upper left", bbox_to_anchor=(1.0, 1.0), frameon=True, fontsize=7)
-        fig.tight_layout()
-        _save_fig(fig, "quality_vs_refusal_scatter", fig_dir)
+    # ── 4c. Reconstruction error to original ratio bar chart ──
+    if "recon_error_to_original_ratio" in df.columns:
+        df_rer = df.dropna(subset=["recon_error_to_original_ratio"]).sort_values(["category", "config"])
+        if not df_rer.empty:
+            fig, ax = plt.subplots(figsize=(10, 5))
+            ax.set_facecolor("#fafafa")
+            ax.grid(True, axis="y", alpha=0.3, linestyle="--", linewidth=0.5)
+            x_labels_rer = df_rer["config"].tolist()
+            rer_vals = df_rer["recon_error_to_original_ratio"].tolist()
+            colors_rer = [palette.get(r["category"], "#999999") for _, r in df_rer.iterrows()]
+            ax.bar(range(len(x_labels_rer)), rer_vals, color=colors_rer,
+                   edgecolor="white", linewidth=0.5)
+            ax.set_xticks(range(len(x_labels_rer)))
+            ax.set_xticklabels(x_labels_rer, rotation=45, ha="right", fontsize=7)
+            ax.set_ylabel(r"$\|\mathbf{h} - \mathrm{Dec}(\mathbf{z})\|_2 \,/\, \|\mathbf{h}\|_2$")
+            ax.set_title("Reconstruction Error / Original Norm", fontweight="bold")
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
+            handles_rer = [Patch(color=palette[c], label=c.replace("_", " ").title())
+                           for c in CATEGORIES if c in set(df_rer["category"])]
+            ax.legend(handles=handles_rer, loc="upper left", bbox_to_anchor=(1.0, 1.0),
+                      frameon=True, fontsize=7)
+            fig.tight_layout()
+            _save_fig(fig, "recon_error_ratio_bar", fig_dir)
 
     # ── 5. Bar chart: steering delta / original ratio per config ──
     if "delta_to_original_ratio" in df.columns:
@@ -941,6 +876,260 @@ def generate_graphs(df, model=DEFAULT_MODEL):
             ax.legend(loc="upper left", bbox_to_anchor=(1.0, 1.0), frameon=True, fontsize=8)
             fig.tight_layout()
             _save_fig(fig, "quality_distribution_histogram", fig_dir)
+
+    # ── Helper: annotate points on a line plot, avoiding overlaps ──
+    def _annotate_no_overlap(ax, points, fontsize=6):
+        """Annotate (x, y, text, color) tuples without overlaps.
+
+        Measures each label's pixel size once, then uses greedy placement
+        with actual bbox overlap checks over a dense grid of candidates.
+        """
+        if not points:
+            return
+
+        fig = ax.get_figure()
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        pad = 3  # px padding around each bbox
+
+        # Measure text size for each label (place temporarily, read bbox, remove)
+        text_sizes = []  # (half_w, half_h) in display px
+        for x, y, text, color in points:
+            tmp = ax.text(0.5, 0.5, text, fontsize=fontsize, transform=ax.transAxes,
+                          bbox=dict(boxstyle="round,pad=0.15", fc="white",
+                                    ec="none", alpha=0.7))
+            fig.canvas.draw()
+            bb = tmp.get_window_extent(renderer)
+            text_sizes.append(((bb.width / 2) + pad, (bb.height / 2) + pad))
+            tmp.remove()
+
+        # Build dense candidate offsets (in points)
+        candidates = []
+        for dy in [10, -12, 18, -20, 28, -30, 38, -40, 48, -50]:
+            for dx in [0, 10, -10, 20, -20, 30, -30]:
+                candidates.append((dx, dy))
+
+        # Convert data points to display coords
+        data_display = [ax.transData.transform((x, y)) for x, y, _, _ in points]
+
+        def _bbox(center_x, center_y, hw, hh):
+            return (center_x - hw, center_y - hh, center_x + hw, center_y + hh)
+
+        def _overlaps_any(box, placed):
+            for pb in placed:
+                if box[0] < pb[2] and box[2] > pb[0] and box[1] < pb[3] and box[3] > pb[1]:
+                    return True
+            return False
+
+        def _total_overlap(box, placed):
+            total = 0
+            for pb in placed:
+                dx = max(0, min(box[2], pb[2]) - max(box[0], pb[0]))
+                dy = max(0, min(box[3], pb[3]) - max(box[1], pb[1]))
+                total += dx * dy
+            return total
+
+        placed_bboxes = []
+        for i, (x, y, text, color) in enumerate(points):
+            disp_x, disp_y = data_display[i]
+            hw, hh = text_sizes[i]
+
+            best_offset = candidates[0]
+            best_cost = float("inf")
+            for dx, dy in candidates:
+                cx, cy = disp_x + dx, disp_y + dy
+                box = _bbox(cx, cy, hw, hh)
+                ov = _total_overlap(box, placed_bboxes)
+                # Also penalise distance from point (prefer closer labels)
+                dist_cost = (dx**2 + dy**2) ** 0.5 * 0.1
+                cost = ov + dist_cost
+                if cost < best_cost:
+                    best_cost = cost
+                    best_offset = (dx, dy)
+                if ov == 0 and abs(dy) <= 12:
+                    break  # good enough
+            ox, oy = best_offset
+            ha = "center" if abs(ox) < 5 else ("left" if ox > 0 else "right")
+            ax.annotate(text, (x, y), textcoords="offset points",
+                        xytext=(ox, oy), ha=ha, fontsize=fontsize, color=color,
+                        bbox=dict(boxstyle="round,pad=0.15", fc="white",
+                                  ec="none", alpha=0.7))
+            # Record placed bbox
+            cx, cy = disp_x + ox, disp_y + oy
+            placed_bboxes.append(_bbox(cx, cy, hw, hh))
+
+    # ── 8. Combined line plot: refusal rate vs sentiment coefficient ──
+    panels = [
+        ("positive_jailbreak", "positive", "coeff_pos", "Positive Sentiment Coefficient"),
+        ("negative_jailbreak", "negative", "coeff_neg", "Negative Sentiment Coefficient"),
+    ]
+    panels = [(jb_cat, solo_cat, col, lbl) for jb_cat, solo_cat, col, lbl in panels
+              if col in df.columns and not df[(df["category"] == jb_cat) & df[col].notna()].empty]
+    if panels:
+        fig, axes = plt.subplots(1, len(panels), figsize=(7 * len(panels), 5.5), squeeze=False)
+        fig.patch.set_facecolor("white")
+        jb_colors = {-0.75: "#2ca02c", -0.5: "#c44e52", 0.5: "#4c72b0", 0.75: "#8172b3"}
+        jb_markers = {-0.75: "D", -0.5: "o", 0.5: "s", 0.75: "^"}
+        solo_color = "#55a868"
+        solo_marker = "D"
+        for idx, (jb_cat, solo_cat, coeff_col, xlabel) in enumerate(panels):
+            ax = axes[0][idx]
+            _style_ax(ax)
+            all_points = []  # collect (x, y, text, color) for deferred annotation
+            # Sentiment-only line
+            solo = df[(df["category"] == solo_cat) & df[coeff_col].notna()].copy()
+            if not solo.empty and len(solo) >= 2:
+                solo = solo.sort_values(coeff_col)
+                ax.plot(solo[coeff_col], solo["refusal_rate_pct"], f"{solo_marker}--",
+                        color=solo_color, linewidth=2, markersize=8,
+                        markeredgecolor="white", markeredgewidth=1,
+                        label="Sentiment only (no JB)", alpha=0.8)
+                for _, row in solo.iterrows():
+                    all_points.append((row[coeff_col], row["refusal_rate_pct"],
+                                       f"{row['refusal_rate_pct']:.0f}%", solo_color))
+            # Sentiment + JB lines
+            sub = df[(df["category"] == jb_cat) & df[coeff_col].notna()].copy()
+            jb_vals = sorted(sub["coeff_jb"].dropna().unique())
+            for jb_v in jb_vals:
+                s = sub[sub["coeff_jb"] == jb_v].sort_values(coeff_col)
+                if len(s) < 2:
+                    continue
+                color = jb_colors.get(jb_v, "#999999")
+                marker = jb_markers.get(jb_v, "o")
+                ax.plot(s[coeff_col], s["refusal_rate_pct"], f"{marker}-",
+                        color=color, linewidth=2, markersize=8,
+                        markeredgecolor="white", markeredgewidth=1,
+                        label=f"+ JB coeff = {jb_v}")
+                for _, row in s.iterrows():
+                    all_points.append((row[coeff_col], row["refusal_rate_pct"],
+                                       f"{row['refusal_rate_pct']:.0f}%", color))
+            _annotate_no_overlap(ax, all_points)
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel("Refusal Rate (%)")
+            ax.set_title(solo_cat.title() + " Sentiment Steering", fontweight="bold")
+            ax.yaxis.set_major_formatter(mticker.PercentFormatter(100))
+            ax.set_ylim(-5, 115)
+            ax.legend(frameon=True, fontsize=8)
+        fig.suptitle("Refusal Rate vs. Sentiment Coefficient",
+                     fontweight="bold", fontsize=12, y=1.02)
+        fig.tight_layout()
+        _save_fig(fig, "refusal_vs_sentiment_coeff_combined", fig_dir)
+
+    # ── 8b. Combined line plot: quality vs sentiment coefficient ──
+    if panels:
+        fig, axes = plt.subplots(1, len(panels), figsize=(7 * len(panels), 5.5), squeeze=False)
+        fig.patch.set_facecolor("white")
+        for idx, (jb_cat, solo_cat, coeff_col, xlabel) in enumerate(panels):
+            ax = axes[0][idx]
+            _style_ax(ax)
+            all_points = []
+            # Sentiment-only line
+            solo = df[(df["category"] == solo_cat) & df[coeff_col].notna()].copy()
+            if not solo.empty and len(solo) >= 2:
+                solo = solo.sort_values(coeff_col)
+                ax.plot(solo[coeff_col], solo["avg_quality"], f"{solo_marker}--",
+                        color=solo_color, linewidth=2, markersize=8,
+                        markeredgecolor="white", markeredgewidth=1,
+                        label="Sentiment only (no JB)", alpha=0.8)
+                for _, row in solo.iterrows():
+                    all_points.append((row[coeff_col], row["avg_quality"],
+                                       f"{row['avg_quality']:.1f}", solo_color))
+            # Sentiment + JB lines
+            sub = df[(df["category"] == jb_cat) & df[coeff_col].notna()].copy()
+            jb_vals = sorted(sub["coeff_jb"].dropna().unique())
+            for jb_v in jb_vals:
+                s = sub[sub["coeff_jb"] == jb_v].sort_values(coeff_col)
+                if len(s) < 2:
+                    continue
+                color = jb_colors.get(jb_v, "#999999")
+                marker = jb_markers.get(jb_v, "o")
+                ax.plot(s[coeff_col], s["avg_quality"], f"{marker}-",
+                        color=color, linewidth=2, markersize=8,
+                        markeredgecolor="white", markeredgewidth=1,
+                        label=f"+ JB coeff = {jb_v}")
+                for _, row in s.iterrows():
+                    all_points.append((row[coeff_col], row["avg_quality"],
+                                       f"{row['avg_quality']:.1f}", color))
+            _annotate_no_overlap(ax, all_points)
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel("Avg Quality (1–10)")
+            ax.set_title(solo_cat.title() + " Sentiment Steering", fontweight="bold")
+            ax.set_ylim(0, 11.5)
+            ax.legend(frameon=True, fontsize=8)
+        fig.suptitle("Response Quality vs. Sentiment Coefficient",
+                     fontweight="bold", fontsize=12, y=1.02)
+        fig.tight_layout()
+        _save_fig(fig, "quality_vs_sentiment_coeff_combined", fig_dir)
+
+    # ── 8c–8e. Combined line plots for SAE metrics vs sentiment coefficient ──
+    sae_metrics = [
+        ("delta_to_original_ratio", r"$\|\Delta\| \,/\, \|\mathbf{h}\|$",
+         "Steering Magnitude vs. Sentiment Coefficient",
+         "steering_magnitude_vs_sentiment_coeff_combined", None),
+        ("reconstruction_error_l2", r"Reconstruction Error $\|\mathbf{h} - \mathrm{Dec}(\mathbf{z})\|_2$",
+         "Reconstruction Error vs. Sentiment Coefficient",
+         "recon_error_vs_sentiment_coeff_combined", None),
+        ("recon_error_to_original_ratio", r"Recon Error / Original Norm",
+         "Reconstruction Error Ratio vs. Sentiment Coefficient",
+         "recon_error_ratio_vs_sentiment_coeff_combined", None),
+        ("delta_l2", r"Steering Delta $\|\Delta\|_2$",
+         "Steering Delta Norm vs. Sentiment Coefficient",
+         "delta_norm_vs_sentiment_coeff_combined", None),
+    ]
+    for metric_col, ylabel, suptitle_text, save_name, ylim in sae_metrics:
+        if metric_col not in df.columns or not panels:
+            continue
+        has_data = False
+        for jb_cat, solo_cat, coeff_col, _ in panels:
+            if not df[(df["category"].isin([jb_cat, solo_cat])) & df[coeff_col].notna() & df[metric_col].notna()].empty:
+                has_data = True
+                break
+        if not has_data:
+            continue
+        fig, axes = plt.subplots(1, len(panels), figsize=(7 * len(panels), 5.5), squeeze=False)
+        fig.patch.set_facecolor("white")
+        for idx, (jb_cat, solo_cat, coeff_col, xlabel) in enumerate(panels):
+            ax = axes[0][idx]
+            _style_ax(ax)
+            all_points = []
+            fmt_fn = (lambda v: f"{v:.3f}") if df[metric_col].dropna().max() < 1 else (lambda v: f"{v:.0f}")
+            # Sentiment-only line
+            solo = df[(df["category"] == solo_cat) & df[coeff_col].notna() & df[metric_col].notna()].copy()
+            if not solo.empty and len(solo) >= 2:
+                solo = solo.sort_values(coeff_col)
+                ax.plot(solo[coeff_col], solo[metric_col], f"{solo_marker}--",
+                        color=solo_color, linewidth=2, markersize=8,
+                        markeredgecolor="white", markeredgewidth=1,
+                        label="Sentiment only (no JB)", alpha=0.8)
+                for _, row in solo.iterrows():
+                    all_points.append((row[coeff_col], row[metric_col],
+                                       fmt_fn(row[metric_col]), solo_color))
+            # Sentiment + JB lines
+            sub = df[(df["category"] == jb_cat) & df[coeff_col].notna() & df[metric_col].notna()].copy()
+            jb_vals = sorted(sub["coeff_jb"].dropna().unique())
+            for jb_v in jb_vals:
+                s = sub[sub["coeff_jb"] == jb_v].sort_values(coeff_col)
+                if len(s) < 2:
+                    continue
+                color = jb_colors.get(jb_v, "#999999")
+                marker = jb_markers.get(jb_v, "o")
+                ax.plot(s[coeff_col], s[metric_col], f"{marker}-",
+                        color=color, linewidth=2, markersize=8,
+                        markeredgecolor="white", markeredgewidth=1,
+                        label=f"+ JB coeff = {jb_v}")
+                for _, row in s.iterrows():
+                    all_points.append((row[coeff_col], row[metric_col],
+                                       fmt_fn(row[metric_col]), color))
+            _annotate_no_overlap(ax, all_points)
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel(ylabel)
+            ax.set_title(solo_cat.title() + " Sentiment Steering", fontweight="bold")
+            if ylim is not None:
+                ax.set_ylim(ylim)
+            ax.legend(frameon=True, fontsize=8)
+        fig.suptitle(suptitle_text, fontweight="bold", fontsize=12, y=1.02)
+        fig.tight_layout()
+        _save_fig(fig, save_name, fig_dir)
 
     print(f"\nAll figures saved to {fig_dir}/")
 
